@@ -1,0 +1,62 @@
+[
+    {
+        "job_filing_number": "M00797798-I1",
+        "applicant_business_name": "KERI ENGINEERING, P.C.",
+        "applicant_street_name": "Suite 303 140 Mountain Ave,",
+        "city": "Springfield",
+        "state": "NJ",
+        "zip": "07081",
+        "house_no": "541",
+        "street_name": "COLUMBUS AVENUE",
+        "borough": "Manhattan",
+        "latitude": "40.786585",
+        "longitude": "-73.972089",
+        "filing_date": "2026-08-14T00:00:00.000",
+        "mechanical_systems_work_type_": "YES",
+        "plumbing_work_type": "YES",
+        "sprinkler_work_type": "NO"
+    },
+    {
+        "job_filing_number": "Q01042595-P2",
+        "applicant_business_name": "keri engineering, p.c.",
+        "applicant_street_name": "Suite 303 140 Mountain Ave,",
+        "city": "Springfield",
+        "state": "NJ",
+        "zip": "07081",
+        "house_no": "180-06",
+        "street_name": "144 AVENUE",
+        "borough": "Queens",
+        "latitude": "40.668102",
+        "longitude": "-73.764157",
+        "filing_date": "2026-07-02T00:00:00.000",
+        "mechanical_systems_work_type_": "NO",
+        "plumbing_work_type": "YES",
+        "sprinkler_work_type": "NO"
+    },
+    {
+        "job_filing_number": "S01147390-S1",
+        "applicant_business_name": "ATOZ Consulting Engineers, PC",
+        "applicant_street_name": "363 7th Avenue, 21st Floor",
+        "city": "NEW YORK",
+        "state": "NY",
+        "zip": "10001",
+        "house_no": "82",
+        "street_name": "DAVIDSON STREET",
+        "borough": "Staten Island",
+        "latitude": "40.635287",
+        "longitude": "-74.163819",
+        "mechanical_systems_work_type_": "YES",
+        "plumbing_work_type": "NO",
+        "sprinkler_work_type": "NO"
+    },
+    {
+        "job_filing_number": "X00000001-I1",
+        "applicant_business_name": "NO WORK TYPE MATCH LLC",
+        "house_no": "1",
+        "street_name": "MAIN STREET",
+        "borough": "Bronx",
+        "mechanical_systems_work_type_": "NO",
+        "plumbing_work_type": "NO",
+        "sprinkler_work_type": "NO"
+    }
+]

@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Any
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 from sliderule import db
 
@@ -48,7 +49,7 @@ def enqueue(
     campaign_person_id: int | None = None,
     firm_id: int | None = None,
     organization_id: int | None = None,
-    payload: str | None = None,
+    payload: dict | None = None,
     run_after: datetime | None = None,
     key: str | None = None,
 ) -> int | None:
@@ -73,7 +74,8 @@ def enqueue(
         " VALUES (%s, %s, %s, %s, %s, %s, coalesce(%s, now()))"
         " ON CONFLICT (idempotency_key) DO NOTHING"
         " RETURNING id",
-        (organization_id, step, campaign_person_id, firm_id, key, payload, run_after),
+        (organization_id, step, campaign_person_id, firm_id, key,
+         Jsonb(payload) if payload is not None else None, run_after),
     ).fetchone()
     return row[0] if row else None
 

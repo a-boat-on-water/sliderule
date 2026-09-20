@@ -24,6 +24,16 @@ alembic upgrade head       # apply
 alembic downgrade base     # roll back
 ```
 
+## Run
+
+```sh
+uvicorn sliderule.api.main:app --reload    # API
+python -m sliderule.worker                 # worker (polls jobs)
+```
+
+To pull NYC DOB filings, enqueue a `sync_filings` job (payload
+`{"source": "nyc_dob", "since": "YYYY-MM-DD"}`) — the worker does the rest.
+
 ## Tests
 
 Tests run against the Neon **dev** branch via `DATABASE_URL` and truncate every table between

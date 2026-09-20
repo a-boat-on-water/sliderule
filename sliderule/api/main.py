@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI
 
+from sliderule.api import filings
 from sliderule.api.auth import AuthContext, ClerkVerifier, TokenVerifier, get_auth
 from sliderule.transition import GRAPH
 
@@ -12,6 +13,7 @@ from sliderule.transition import GRAPH
 def create_app(token_verifier: TokenVerifier | None = None) -> FastAPI:
     app = FastAPI(title="sliderule")
     app.state.token_verifier = token_verifier or ClerkVerifier()
+    app.include_router(filings.router)
 
     @app.get("/health")
     def health() -> dict:

@@ -15,6 +15,9 @@ dependencies = [
     "pydantic",
     "pytest",
     "python-dotenv",
+    "pyjwt[crypto]",    # Clerk JWT verification (RS256 via JWKS)
+    "httpx",            # FastAPI TestClient; later the HTTP seam for adapters
+    "uvicorn",
 ]
 
 [tool.hatch.build.targets.wheel]

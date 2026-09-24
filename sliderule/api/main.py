@@ -3,7 +3,10 @@ agent runs or external API calls inside a request; the worker executes."""
 
 from __future__ import annotations
 
+import os
+
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from sliderule.api import filings
 from sliderule.api.auth import AuthContext, ClerkVerifier, TokenVerifier, get_auth
@@ -13,6 +16,14 @@ from sliderule.transition import GRAPH
 def create_app(token_verifier: TokenVerifier | None = None) -> FastAPI:
     app = FastAPI(title="sliderule")
     app.state.token_verifier = token_verifier or ClerkVerifier()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=os.environ.get(
+            "SLIDERULE_WEB_ORIGINS", "http://localhost:3000"
+        ).split(","),
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
     app.include_router(filings.router)
 
     @app.get("/health")

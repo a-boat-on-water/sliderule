@@ -44,3 +44,45 @@ jobs:
           # build-time only; any valid-shaped key lets `next build` compile
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.CI_CLERK_PUBLISHABLE_KEY }}
           NEXT_PUBLIC_SLIDERULE_API_URL: http://localhost:8000
+
+  # Deploys run only on push to main, after both checks pass.
+  deploy-web:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [tests, web-build]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npx -y vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - run: npx -y vercel@latest build --prod --token="$VERCEL_TOKEN"
+      - run: npx -y vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
+  # API + worker to the VPS. Activates when the repo variable VPS_ENABLED is
+  # "true" and VPS_HOST / VPS_USER / VPS_SSH_KEY secrets are set.
+  deploy-api:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.VPS_ENABLED == 'true'
+    needs: [tests, web-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy over SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "cd sliderule && git fetch origin && git reset --hard origin/main \
+             && docker compose -f docker-compose.prod.yml up -d --build \
+             && docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head"

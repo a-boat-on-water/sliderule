@@ -34,6 +34,19 @@ python -m sliderule.worker                 # worker (polls jobs)
 To pull NYC DOB filings, enqueue a `sync_filings` job (payload
 `{"source": "nyc_dob", "since": "YYYY-MM-DD"}`) — the worker does the rest.
 
+## Environments
+
+| | database (Neon branch) | code | runs |
+|---|---|---|---|
+| dev | `dev` | your working tree | locally (`uvicorn` + `next dev`) |
+| ci | `ci` (child of dev) | the PR | GitHub Actions, serialized |
+| prod | `production` | `main` only | docker compose (`docker-compose.prod.yml`) |
+
+`main` is protected: PRs merge only when CI is green. Deploy is
+`docker compose -f docker-compose.prod.yml up -d --build` on the prod host
+with secrets in `.env.production` (see `.env.production.example`), after
+`... run --rm api alembic upgrade head` for migrations.
+
 ## Tests
 
 Tests run against the Neon **dev** branch via `DATABASE_URL` and truncate every table between

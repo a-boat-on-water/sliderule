@@ -1,0 +1,20 @@
+# Production: API + worker on one host. Secrets come from .env.production
+# (never committed). Migrations run once at deploy:
+#   docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+services:
+  api:
+    image: sliderule
+    build: .
+    container_name: sliderule-api
+    env_file: .env.production
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  worker:
+    image: sliderule
+    build: .
+    container_name: sliderule-worker
+    command: ["python", "-m", "sliderule.worker"]
+    env_file: .env.production
+    restart: unless-stopped

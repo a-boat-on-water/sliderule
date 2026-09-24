@@ -1,10 +1,10 @@
 """The state machine is the only writer of campaign_people.stage.
 
 Greps every source file in the repo (outside sliderule/transition.py) for SQL
-that writes a stage column. Fails, naming the offending files, when the rule
-is broken. Patterns are deliberately broad: an UPDATE that sets stage, or a
-stage assignment to a SQL placeholder (%s, %(name)s, :name, $1) or a quoted
-SQL literal.
+that WRITES a stage column. Reading stage (WHERE stage = 'screened') is
+legitimate everywhere; the patterns only fire in write context — a stage
+assignment on a line that carries UPDATE/SET, or in an assignment list
+continuation. Fails, naming the offending files, when the rule is broken.
 """
 
 import re
@@ -24,10 +24,13 @@ SKIP_DIRS = {
 }
 
 WRITE_PATTERNS = [
-    # an UPDATE that sets the stage column
+    # the stage column immediately after the SET keyword
     re.compile(r"(?i)\bset\s+stage\b"),
-    # a stage assignment to a SQL placeholder or quoted SQL literal
-    re.compile(r"(?i)\bstage\s*=\s*(%s|%\(|:\w|\$\d|')"),
+    # a stage assignment on a line that carries UPDATE or SET
+    re.compile(r"(?i)\b(update|set)\b[^\n]*?\bstage\s*="),
+    # a stage assignment continuing a SET list on a later line, with a SQL
+    # placeholder or quoted SQL literal on the right-hand side
+    re.compile(r"(?i),\s*stage\s*=\s*(%s|%\(|:\w|\$\d|')"),
 ]
 
 

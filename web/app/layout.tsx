@@ -30,12 +30,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 slide<em>rule</em>
               </div>
               <nav className="tb-nav">
-                <Link href="/filings" className="active">
-                  Filings
-                </Link>
-                <span className="soon" title="Build step 3">
-                  Campaigns
-                </span>
+                <Link href="/campaigns">Campaigns</Link>
+                <Link href="/filings">Filings</Link>
                 <span className="soon" title="Build step 5">
                   Replies
                 </span>

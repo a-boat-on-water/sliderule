@@ -8,9 +8,9 @@ import os
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from sliderule.api import filings
+from sliderule.api import campaigns, filings
 from sliderule.api.auth import AuthContext, ClerkVerifier, TokenVerifier, get_auth
-from sliderule.transition import GRAPH
+from sliderule.transition import GRAPH, STAGE_ORDER
 
 
 def create_app(token_verifier: TokenVerifier | None = None) -> FastAPI:
@@ -25,6 +25,7 @@ def create_app(token_verifier: TokenVerifier | None = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
     app.include_router(filings.router)
+    app.include_router(campaigns.router)
 
     @app.get("/health")
     def health() -> dict:
@@ -35,10 +36,11 @@ def create_app(token_verifier: TokenVerifier | None = None) -> FastAPI:
         """The transition graph, straight from the state machine — the
         dashboard draws the board from the same source that enforces it."""
         return {
+            "order": STAGE_ORDER,
             "graph": {
                 from_stage: {to: sorted(actors) for to, actors in edges.items()}
                 for from_stage, edges in GRAPH.items()
-            }
+            },
         }
 
     return app

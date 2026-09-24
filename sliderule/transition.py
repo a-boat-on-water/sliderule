@@ -87,6 +87,13 @@ GRAPH: dict[str, dict[str, frozenset[str]]] = {
 
 STAGES = frozenset(GRAPH)
 
+# Canonical display order: the pipeline path, then terminal / parked.
+STAGE_ORDER = [
+    "sourced", "screened", "approved", "contactable", "contacted",
+    "replied", "screening_call", "interview", "hired",
+    "rejected", "declined", "no_reply", "parked", "opted_out",
+]
+
 
 def transition(
     conn: psycopg.Connection,

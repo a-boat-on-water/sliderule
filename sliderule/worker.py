@@ -154,6 +154,10 @@ def run_once(
     if job_id is None:
         return False
     job = _fetch_job(conn, job_id)
+    # _fetch_job's read opened an implicit transaction; end it, or every
+    # conn.transaction() below silently becomes a savepoint inside it and
+    # nothing this function writes is ever visible to other connections.
+    conn.commit()
     try:
         handler = steps.get(job["step"])
         if handler is None:

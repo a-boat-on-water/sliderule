@@ -3,7 +3,6 @@
 import { Show, SignInButton, useAuth } from "@clerk/nextjs";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, useApi } from "../../lib/api";
-import { FilingMap, type Pin } from "./map";
 
 const WORK_TYPES = [
   { key: "mechanical_systems", label: "Mechanical", color: "#2a78d6" },
@@ -34,7 +33,6 @@ export default function FilingsPage() {
   const [days, setDays] = useState<number | null>(90);
   const [radiusKm, setRadiusKm] = useState<number | null>(null);
   const [firms, setFirms] = useState<Firm[]>([]);
-  const [pins, setPins] = useState<Pin[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -50,6 +48,7 @@ export default function FilingsPage() {
       params.set("lng", String(MIDTOWN.lng));
       params.set("radius_km", String(radiusKm));
     }
+    params.set("limit", "100");
     return params;
   }, [workTypes, days, radiusKm]);
 
@@ -58,21 +57,9 @@ export default function FilingsPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    Promise.all([
-      api("/firms/search", buildParams()),
-      api(
-        "/filings/search",
-        (() => {
-          const p = buildParams();
-          p.set("limit", "2000");
-          return p;
-        })(),
-      ),
-    ])
-      .then(([firmsRes, filingsRes]) => {
-        if (cancelled) return;
-        setFirms(firmsRes.firms);
-        setPins(filingsRes.filings);
+    api("/firms/search", buildParams())
+      .then((res) => {
+        if (!cancelled) setFirms(res.firms);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -129,8 +116,14 @@ export default function FilingsPage() {
     );
   }
 
-  const totalFilings = pins.length;
-  const lastFiled = firms[0]?.last_filed_at ?? null;
+  const totalFilings = firms.reduce((sum, f) => sum + f.filing_count, 0);
+  const lastFiled = firms.reduce<string | null>(
+    (latest, f) =>
+      f.last_filed_at && (!latest || f.last_filed_at > latest)
+        ? f.last_filed_at
+        : latest,
+    null,
+  );
 
   return (
     <>
@@ -178,12 +171,12 @@ export default function FilingsPage() {
         <div className="cell">
           <span className="lbl">Firms matching</span>
           <b>{firms.length}</b>
-          <small>{firms.length === 50 ? "top 50 shown" : "ranked by filings"}</small>
+          <small>{firms.length === 100 ? "top 100 shown" : "ranked by filings"}</small>
         </div>
         <div className="cell">
           <span className="lbl">Filings</span>
           <b>{totalFilings.toLocaleString()}</b>
-          <small>{totalFilings === 2000 ? "first 2,000 shown" : "matching filters"}</small>
+          <small>across firms shown</small>
         </div>
         <div className="cell">
           <span className="lbl">Most recent</span>
@@ -192,57 +185,46 @@ export default function FilingsPage() {
         </div>
       </div>
 
-      <div className="split">
-        <div style={{ overflowY: "auto" }}>
-          <table className="firms">
-            <thead>
-              <tr>
-                <th>Firm</th>
-                <th>Filings</th>
-                <th>By work type</th>
-                <th>Last filed</th>
+      <div style={{ overflowY: "auto", flex: 1 }}>
+        <table className="firms">
+          <thead>
+            <tr>
+              <th>Firm</th>
+              <th>Office</th>
+              <th>Filings</th>
+              <th>By work type</th>
+              <th>Last filed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {firms.map((firm) => (
+              <tr key={firm.id}>
+                <td className="firm-name">{firm.name}</td>
+                <td className="firm-addr">{firm.office_address ?? "—"}</td>
+                <td className="num">{firm.filing_count}</td>
+                <td>
+                  <div className="mini" aria-label={miniLabel(firm)}>
+                    {WORK_TYPES.map((wt) => {
+                      const n = firm.filings_by_work_type?.[wt.key] ?? 0;
+                      return n > 0 ? (
+                        <i key={wt.key} style={{ flex: n, background: wt.color }} />
+                      ) : null;
+                    })}
+                  </div>
+                </td>
+                <td className="num">{firm.last_filed_at ?? "—"}</td>
               </tr>
-            </thead>
-            <tbody>
-              {firms.map((firm) => (
-                <tr key={firm.id}>
-                  <td>
-                    <div className="firm-name">{firm.name}</div>
-                    {firm.office_address && (
-                      <div className="firm-addr">{firm.office_address}</div>
-                    )}
-                  </td>
-                  <td className="num">{firm.filing_count}</td>
-                  <td>
-                    <div className="mini" aria-label={miniLabel(firm)}>
-                      {WORK_TYPES.map((wt) => {
-                        const n = firm.filings_by_work_type?.[wt.key] ?? 0;
-                        return n > 0 ? (
-                          <i key={wt.key} style={{ flex: n, background: wt.color }} />
-                        ) : null;
-                      })}
-                    </div>
-                  </td>
-                  <td className="num">{firm.last_filed_at ?? "—"}</td>
-                </tr>
-              ))}
-              {!loading && firms.length === 0 && !error && (
-                <tr>
-                  <td colSpan={4} style={{ color: "var(--ink-3)", padding: 24 }}>
-                    No filings match. Widen the date range, or run a
-                    sync_filings job if the database is empty.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="mappanel">
-          <FilingMap
-            pins={pins}
-            center={radiusKm != null ? { ...MIDTOWN, radiusKm } : null}
-          />
-        </div>
+            ))}
+            {!loading && firms.length === 0 && !error && (
+              <tr>
+                <td colSpan={5} style={{ color: "var(--ink-3)", padding: 24 }}>
+                  No filings match. Widen the date range, or run a
+                  sync_filings job if the database is empty.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </>
   );

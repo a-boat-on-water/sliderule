@@ -194,4 +194,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # `python -m sliderule.worker` loads this file as __main__, while the
+    # step modules register into the separately-imported sliderule.worker —
+    # two different STEPS dicts. Delegate to the canonical module so
+    # registration and execution share one registry.
+    from sliderule.worker import main as canonical_main
+
+    canonical_main()

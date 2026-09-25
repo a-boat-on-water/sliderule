@@ -20,12 +20,24 @@ export class ApiError extends Error {
 export function useApi() {
   const { getToken } = useAuth();
   return useCallback(
-    async (path: string, params?: URLSearchParams) => {
+    async (
+      path: string,
+      options?: { params?: URLSearchParams; method?: string; body?: unknown },
+    ) => {
       const token = await getToken();
       if (!token) throw new ApiError(401, "signed out");
-      const qs = params && params.size > 0 ? `?${params}` : "";
+      const qs =
+        options?.params && options.params.size > 0 ? `?${options.params}` : "";
       const res = await fetch(`${API_BASE}${path}${qs}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        method: options?.method ?? "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(options?.body !== undefined
+            ? { "Content-Type": "application/json" }
+            : {}),
+        },
+        body:
+          options?.body !== undefined ? JSON.stringify(options.body) : undefined,
       });
       if (!res.ok) throw new ApiError(res.status, await res.text());
       return res.json();

@@ -52,3 +52,8 @@ def test_stages_serves_the_transition_graph():
     assert graph["screened"]["approved"] == ["human"]
     assert "replied" in graph["contacted"]
     assert graph["opted_out"] == {}
+    # order and terminal partition the stage set, in board-drawing order
+    body = response.json()
+    assert set(body["order"]) == set(GRAPH)
+    assert set(body["terminal"]) < set(body["order"])
+    assert body["order"][-len(body["terminal"]):] == body["terminal"]

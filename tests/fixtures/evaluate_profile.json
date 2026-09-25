@@ -1,0 +1,21 @@
+[
+    {
+        "request": {
+            "note": "the contract for evaluate_profile's single structured call",
+            "system_contains": "screen candidate profiles",
+            "user_contains": ["Role:", "Rubric:", "Candidate:", "Profile text:"],
+            "schema_top_level": ["bucket", "reasoning", "extracted"]
+        },
+        "response": {
+            "bucket": "strong",
+            "reasoning": "Eight years of mechanical production work at a small NYC MEP firm, drafting DOB filings himself — meets every hard requirement. Part-time availability stated outright.",
+            "extracted": {
+                "current_title": "Senior Mechanical Designer",
+                "years_experience": 8,
+                "location": "Queens, NY",
+                "licenses": [],
+                "skills": ["AutoCAD", "HVAC load calculations", "DOB NOW filings"]
+            }
+        }
+    }
+]

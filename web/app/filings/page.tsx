@@ -57,7 +57,7 @@ export default function FilingsPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    api("/firms/search", buildParams())
+    api("/firms/search", { params: buildParams() })
       .then((res) => {
         if (!cancelled) setFirms(res.firms);
       })

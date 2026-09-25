@@ -87,6 +87,22 @@ GRAPH: dict[str, dict[str, frozenset[str]]] = {
 
 STAGES = frozenset(GRAPH)
 
+# Canonical display order: the pipeline path, then terminal / parked.
+STAGE_ORDER = [
+    "sourced", "screened", "approved", "contactable", "contacted",
+    "replied", "screening_call", "interview", "hired",
+    "rejected", "declined", "no_reply", "parked", "opted_out",
+]
+TERMINAL_STAGES = ["rejected", "declined", "no_reply", "parked", "opted_out"]
+
+# Explicit raises, not asserts: python -O must not strip these guards.
+if set(STAGE_ORDER) != STAGES:
+    raise RuntimeError("STAGE_ORDER out of sync with GRAPH")
+# Terminal means structurally terminal: no out-edges except opted_out.
+# (hired also qualifies structurally but is deliberately a board column.)
+if not all(set(GRAPH[s]) <= {"opted_out"} for s in TERMINAL_STAGES):
+    raise RuntimeError("TERMINAL_STAGES contains a stage with live out-edges")
+
 
 def transition(
     conn: psycopg.Connection,

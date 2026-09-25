@@ -92,8 +92,8 @@ def test_clear_no_goes_straight_to_rejected(monkeypatch, conn, sourced_with_prof
     assert events == [("rejected", "system")]
 
 
-def test_already_evaluated_is_a_noop(monkeypatch, conn, seed):
-    ids = seed(stage="screened")
+def test_past_the_gate_is_a_noop(monkeypatch, conn, seed):
+    ids = seed(stage="approved")
     conn.execute(
         "INSERT INTO person_profiles (organization_id, person_id,"
         " role_wanted_id, raw_text, bucket) VALUES (%s, %s, %s, 'text', 'strong')",
@@ -104,8 +104,36 @@ def test_already_evaluated_is_a_noop(monkeypatch, conn, seed):
 
     fake = FakeModel("no")
     run_with(monkeypatch, conn, fake)
-    assert fake.calls == []  # no model call, no transition
+    assert fake.calls == []  # no model call, no transition, bucket untouched
+    assert get_stage(conn, ids["campaign_person_id"]) == "approved"
+
+
+def test_screened_reevaluation_updates_bucket_without_transition(
+    monkeypatch, conn, seed
+):
+    ids = seed(stage="screened")
+    conn.execute(
+        "INSERT INTO person_profiles (organization_id, person_id,"
+        " role_wanted_id, raw_text, bucket) VALUES (%s, %s, %s,"
+        " 'updated text', 'strong')",
+        (ids["org_id"], ids["person_id"], ids["role_id"]),
+    )
+    enqueue(conn, "evaluate_profile", campaign_person_id=ids["campaign_person_id"])
+    conn.commit()
+
+    run_with(monkeypatch, conn, FakeModel("no"))
+    (bucket,) = conn.execute(
+        "SELECT bucket FROM person_profiles WHERE person_id = %s",
+        (ids["person_id"],),
+    ).fetchone()
+    assert bucket == "no"  # refreshed
+    # but never re-transitioned: a screened person's edges are human-only
     assert get_stage(conn, ids["campaign_person_id"]) == "screened"
+    events = conn.execute(
+        "SELECT count(*) FROM stage_events WHERE campaign_person_id = %s",
+        (ids["campaign_person_id"],),
+    ).fetchone()[0]
+    assert events == 0
 
 
 def test_missing_profile_fails_the_job(monkeypatch, conn, seed):

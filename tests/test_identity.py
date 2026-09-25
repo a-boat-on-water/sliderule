@@ -33,6 +33,15 @@ def test_linkedin_subdomains_are_accepted():
     )
 
 
+def test_userinfo_port_and_dots_do_not_poison_the_key():
+    canonical = "linkedin.com/in/dana-okafor"
+    assert normalize_linkedin("https://www.linkedin.com:443/in/dana-okafor") == canonical
+    assert normalize_linkedin("https://foo@www.linkedin.com/in/dana-okafor") == canonical
+    assert normalize_linkedin("https://linkedin.com./in/dana-okafor") == canonical
+    # a scheme-less paste with a stray double slash in the path still parses
+    assert normalize_linkedin("linkedin.com/in/dana-okafor//") == canonical
+
+
 def test_identity_key_prefers_linkedin():
     assert identity_key("Dana Okafor", "linkedin.com/in/dana-okafor", 7) == (
         "linkedin.com/in/dana-okafor"

@@ -100,8 +100,8 @@ def evaluate_profile(conn: psycopg.Connection, job: dict[str, Any]) -> None:
         raise LookupError(f"campaign_person {job['campaign_person_id']} not found")
     stage, name, profile_id, raw_text, role_title, rubric = row
 
-    if stage != "sourced":
-        return  # already evaluated (job retry after a partial failure)
+    if stage not in ("sourced", "screened"):
+        return  # past the human gate (or terminal): evaluation is frozen
     if profile_id is None or not raw_text:
         raise ValueError("no profile raw text to evaluate")
 
@@ -117,6 +117,8 @@ def evaluate_profile(conn: psycopg.Connection, job: dict[str, Any]) -> None:
         (Jsonb(result["extracted"]), result["reasoning"], result["bucket"],
          profile_id),
     )
+    if stage == "screened":
+        return  # re-evaluation of updated text: bucket refreshed in place
     if result["bucket"] == "no":
         transition(conn, job["campaign_person_id"], "rejected", "system",
                    "clear no from profile evaluation")

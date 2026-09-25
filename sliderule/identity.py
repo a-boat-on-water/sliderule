@@ -9,10 +9,12 @@ from urllib.parse import urlparse
 
 def normalize_linkedin(url: str) -> str:
     raw = url.strip().lower()
-    if "//" not in raw:
+    if not raw.startswith(("http://", "https://")):
         raw = "https://" + raw
     parsed = urlparse(raw)
-    host = parsed.netloc.removeprefix("www.")
+    # hostname (not netloc): strips userinfo and port, so neither can poison
+    # the identity key or reject a legitimate URL
+    host = (parsed.hostname or "").rstrip(".").removeprefix("www.")
     path = parsed.path.rstrip("/")
     if (host != "linkedin.com" and not host.endswith(".linkedin.com")) or not path:
         raise ValueError(f"not a LinkedIn profile URL: {url!r}")

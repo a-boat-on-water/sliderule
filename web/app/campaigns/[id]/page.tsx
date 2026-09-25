@@ -33,6 +33,7 @@ export default function CampaignPage() {
   const [review, setReview] = useState<ReviewCard[]>([]);
   const [stages, setStages] = useState<Stages | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
   const reload = useCallback(() => {
@@ -50,19 +51,40 @@ export default function CampaignPage() {
       );
   }, [api, id]);
 
+  // board columns come from the same source that enforces the graph;
+  // own effect with retry — a transient failure must not blank the board
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !orgId) return;
-    // board columns come from the same source that enforces the graph
-    api("/stages").then((s) =>
-      setStages({
-        active: s.order.filter((st: string) => !s.terminal.includes(st)),
-        terminal: s.terminal,
-      }),
-    );
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const load = () =>
+      api("/stages")
+        .then((s) => {
+          if (cancelled) return;
+          const terminal: string[] = s.terminal ?? [];
+          setStages({
+            active: s.order.filter((st: string) => !terminal.includes(st)),
+            terminal,
+          });
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setError(err instanceof ApiError ? err.message : String(err));
+          timer = setTimeout(load, 5_000);
+        });
+    load();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isLoaded, isSignedIn, orgId, api]);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !orgId) return;
     reload();
     const timer = setInterval(reload, 10_000); // pick up worker evaluations
     return () => clearInterval(timer);
-  }, [isLoaded, isSignedIn, orgId, api, reload]);
+  }, [isLoaded, isSignedIn, orgId, reload]);
 
   const decide = async (cpId: number, verdict: "approve" | "reject") => {
     let reason: string | null = null;
@@ -83,7 +105,14 @@ export default function CampaignPage() {
 
   const approveAllStrong = async () => {
     try {
-      await api(`/campaigns/${id}/approve-all-strong`, { method: "POST" });
+      const result = await api(`/campaigns/${id}/approve-all-strong`, {
+        method: "POST",
+      });
+      setNotice(
+        result.approved === strongCount
+          ? `Approved ${result.approved} candidate${result.approved === 1 ? "" : "s"}`
+          : `Approved ${result.approved} — the rest were decided concurrently`,
+      );
       reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
@@ -109,6 +138,7 @@ export default function CampaignPage() {
   return (
     <>
       {error && <div className="errband mono">{error}</div>}
+      {notice && <div className="noticeband mono">{notice}</div>}
 
       <div className="cols">
         {(stages?.active ?? []).map((stage) => (

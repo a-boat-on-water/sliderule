@@ -305,6 +305,55 @@ def decide(
     return {"stage": to_stage}
 
 
+class ProfileUpdateIn(BaseModel):
+    raw_profile: str = Field(min_length=1)
+
+
+@router.patch("/campaign-people/{campaign_person_id}/profile")
+def update_profile(
+    campaign_person_id: int,
+    body: ProfileUpdateIn,
+    org_id: int = Depends(get_org_id),
+    conn: psycopg.Connection = Depends(get_conn),
+) -> dict:
+    """Replace the profile text and re-run the evaluation. Only meaningful
+    before the human gate: at sourced or screened. The re-run updates the
+    bucket in place; it never re-transitions a screened person."""
+    row = conn.execute(
+        "SELECT cp.stage, cp.person_id, c.role_wanted_id"
+        "  FROM campaign_people cp JOIN campaigns c ON c.id = cp.campaign_id"
+        " WHERE cp.id = %s AND cp.organization_id = %s",
+        (campaign_person_id, org_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="campaign person not found")
+    stage, person_id, role_wanted_id = row
+    if stage not in ("sourced", "screened"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"profile is frozen once past the review gate (stage {stage})",
+        )
+    conn.execute(
+        "INSERT INTO person_profiles (organization_id, person_id,"
+        " role_wanted_id, raw_text) VALUES (%s, %s, %s, %s)"
+        " ON CONFLICT (person_id, role_wanted_id) DO UPDATE SET"
+        "   raw_text = excluded.raw_text, updated_at = now()",
+        (org_id, person_id, role_wanted_id, body.raw_profile),
+    )
+    (revision,) = conn.execute(
+        "SELECT extract(epoch FROM updated_at)::bigint FROM person_profiles"
+        " WHERE person_id = %s AND role_wanted_id = %s",
+        (person_id, role_wanted_id),
+    ).fetchone()
+    enqueue(
+        conn, "evaluate_profile", campaign_person_id=campaign_person_id,
+        organization_id=org_id,
+        key=f"evaluate_profile:cp:{campaign_person_id}:r{revision}",
+    )
+    conn.commit()
+    return {"enqueued": True}
+
+
 @router.post("/campaigns/{campaign_id}/approve-all-strong")
 def approve_all_strong(
     campaign_id: int,
@@ -312,7 +361,12 @@ def approve_all_strong(
     auth: AuthContext = Depends(get_auth),
     conn: psycopg.Connection = Depends(get_conn),
 ) -> dict:
-    """One request, one transition() per person, always with the human actor."""
+    """One request, one transition() per person, always with the human actor.
+
+    FOR UPDATE locks the screened+strong rows up front: a person decided
+    concurrently is simply not selected (or we wait for that decision to
+    commit first), so the batch is atomic — no per-person race handling.
+    """
     _campaign_or_404(conn, campaign_id, org_id)
     rows = conn.execute(
         "SELECT cp.id, pr.ai_reasoning"
@@ -322,27 +376,18 @@ def approve_all_strong(
         "   AND pr.role_wanted_id = c.role_wanted_id"
         " WHERE cp.campaign_id = %s AND cp.stage = 'screened'"
         "   AND pr.bucket = 'strong'"
-        " ORDER BY cp.id",
+        " ORDER BY cp.id"
+        " FOR UPDATE OF cp",
         (campaign_id,),
     ).fetchall()
-    approved = 0
-    skipped = 0
     for cp_id, ai_reasoning in rows:
-        try:
-            # per-person savepoint: a person moved concurrently (raced with an
-            # individual decision) is skipped, never failing the whole batch
-            with conn.transaction():
-                conn.execute(
-                    "INSERT INTO decisions (organization_id, campaign_person_id,"
-                    " verdict, reason, ai_said)"
-                    " VALUES (%s, %s, 'approve', 'approve all strong', %s)",
-                    (org_id, cp_id,
-                     Jsonb({"bucket": "strong", "reasoning": ai_reasoning})),
-                )
-                transition(conn, cp_id, "approved", "human", "approve all strong")
-        except (IllegalTransition, ActorNotAllowed):
-            skipped += 1
-            continue
-        approved += 1
+        conn.execute(
+            "INSERT INTO decisions (organization_id, campaign_person_id,"
+            " verdict, reason, ai_said)"
+            " VALUES (%s, %s, 'approve', 'approve all strong', %s)",
+            (org_id, cp_id,
+             Jsonb({"bucket": "strong", "reasoning": ai_reasoning})),
+        )
+        transition(conn, cp_id, "approved", "human", "approve all strong")
     conn.commit()
-    return {"approved": approved, "skipped": skipped}
+    return {"approved": len(rows)}

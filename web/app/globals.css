@@ -131,6 +131,8 @@ table.firms { border-collapse: collapse; width: 100%; }
 .stampbtn:hover { background: #faf2f0; }
 .errband { padding: 8px 16px; border-bottom: 1px solid var(--rule-2);
            color: var(--stamp); font-size: 12px; }
+.noticeband { padding: 8px 16px; border-bottom: 1px solid var(--rule-2);
+              color: var(--ink-2); font-size: 12px; }
 
 /* campaign board */
 .cols { display: flex; overflow-x: auto; flex: 1; min-height: 260px; }

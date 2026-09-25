@@ -84,6 +84,16 @@ def test_human_edge_succeeds_for_human_actor(conn, seed):
     assert stage_event_count(conn, cp) == 1
 
 
+def test_stage_lists_partition_the_graph():
+    from sliderule.transition import GRAPH, STAGE_ORDER, STAGES, TERMINAL_STAGES
+
+    assert set(STAGE_ORDER) == STAGES
+    assert STAGE_ORDER[-len(TERMINAL_STAGES):] == TERMINAL_STAGES
+    # terminal means structurally terminal: no out-edges except opted_out
+    for stage in TERMINAL_STAGES:
+        assert set(GRAPH[stage]) <= {"opted_out"}
+
+
 def test_missing_campaign_person_raises_lookup_error(conn):
     with pytest.raises(LookupError):
         transition(conn, 999_999_999, "screened", "system", "no such row")

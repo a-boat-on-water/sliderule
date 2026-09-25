@@ -95,8 +95,13 @@ STAGE_ORDER = [
 ]
 TERMINAL_STAGES = ["rejected", "declined", "no_reply", "parked", "opted_out"]
 
-assert set(STAGE_ORDER) == STAGES, "STAGE_ORDER out of sync with GRAPH"
-assert set(TERMINAL_STAGES) < STAGES, "TERMINAL_STAGES out of sync with GRAPH"
+# Explicit raises, not asserts: python -O must not strip these guards.
+if set(STAGE_ORDER) != STAGES:
+    raise RuntimeError("STAGE_ORDER out of sync with GRAPH")
+# Terminal means structurally terminal: no out-edges except opted_out.
+# (hired also qualifies structurally but is deliberately a board column.)
+if not all(set(GRAPH[s]) <= {"opted_out"} for s in TERMINAL_STAGES):
+    raise RuntimeError("TERMINAL_STAGES contains a stage with live out-edges")
 
 
 def transition(

@@ -28,6 +28,9 @@ class AnthropicModelClient:
 
     def __init__(self, model: str | None = None):
         self._model = model or os.environ.get("SLIDERULE_MODEL", DEFAULT_MODEL)
+        # Single structured calls (classification, extraction) don't need
+        # deep reasoning; keep spend bounded but overridable.
+        self._effort = os.environ.get("SLIDERULE_MODEL_EFFORT", "low")
         self._client = None
 
     def _anthropic(self):
@@ -44,7 +47,10 @@ class AnthropicModelClient:
             model=self._model,
             max_tokens=8192,
             system=system,
-            output_config={"format": {"type": "json_schema", "schema": schema}},
+            output_config={
+                "format": {"type": "json_schema", "schema": schema},
+                "effort": self._effort,
+            },
             messages=[{"role": "user", "content": user}],
         )
         if response.stop_reason == "refusal":

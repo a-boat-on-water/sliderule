@@ -179,38 +179,76 @@ def test_duplicate_person_in_campaign_is_409_and_writes_nothing(client, conn):
     assert "messier name" not in raw_text
 
 
-def test_approve_all_strong_skips_raced_person(client, conn, monkeypatch):
-    import sliderule.api.campaigns as campaigns_module
-    from sliderule.transition import IllegalTransition
-
+def test_approve_all_strong_excludes_already_decided(client, conn, monkeypatch):
     campaign_id = make_campaign(client, "org_a")
-    add_candidate(client, "org_a", campaign_id, "First Strong")
+    first = add_candidate(client, "org_a", campaign_id, "First Strong")
     add_candidate(client, "org_a", campaign_id, "Second Strong")
     monkeypatch.setattr(step_module, "model_client", FakeModel("strong"))
     run_once(conn)
     run_once(conn)
 
-    real_transition = campaigns_module.transition
-    raced: list[int] = []
+    # one person is decided individually before the bulk approve fires;
+    # the FOR UPDATE select simply no longer matches them
+    individual = client.post(
+        f"/campaign-people/{first}/decision",
+        json={"verdict": "approve"},
+        headers=auth("org_a"),
+    )
+    assert individual.status_code == 200
 
-    def racy_transition(conn_, cp_id, *args, **kwargs):
-        if not raced:  # first person "moved concurrently"
-            raced.append(cp_id)
-            raise IllegalTransition("no edge approved -> approved")
-        return real_transition(conn_, cp_id, *args, **kwargs)
-
-    monkeypatch.setattr(campaigns_module, "transition", racy_transition)
     response = client.post(
         f"/campaigns/{campaign_id}/approve-all-strong", headers=auth("org_a")
     )
-    assert response.status_code == 200
-    assert response.json() == {"approved": 1, "skipped": 1}
-    # the raced person keeps no orphaned decision row
-    (decisions,) = conn.execute(
-        "SELECT count(*) FROM decisions WHERE campaign_person_id = %s",
-        (raced[0],),
+    assert response.json() == {"approved": 1}
+    (decisions,) = conn.execute("SELECT count(*) FROM decisions").fetchone()
+    assert decisions == 2  # one individual, one bulk — no duplicates
+
+
+def test_profile_update_reevaluates_without_retransition(client, conn, monkeypatch):
+    campaign_id = make_campaign(client, "org_a")
+    cp_id = add_candidate(client, "org_a", campaign_id, "Dana Okafor")
+    monkeypatch.setattr(step_module, "model_client", FakeModel("strong"))
+    run_once(conn)
+
+    patched = client.patch(
+        f"/campaign-people/{cp_id}/profile",
+        json={"raw_profile": "Corrected resume: actually a plumbing designer."},
+        headers=auth("org_a"),
+    )
+    assert patched.status_code == 200, patched.text
+
+    monkeypatch.setattr(step_module, "model_client", FakeModel("possible"))
+    assert run_once(conn) is True  # the revision-keyed job
+
+    bucket, raw_text = conn.execute(
+        "SELECT bucket, raw_text FROM person_profiles"
     ).fetchone()
-    assert decisions == 0
+    assert bucket == "possible"          # refreshed in place
+    assert "plumbing" in raw_text
+    (stage,) = conn.execute(
+        "SELECT stage FROM campaign_people WHERE id = %s", (cp_id,)
+    ).fetchone()
+    assert stage == "screened"           # no second transition
+    (events,) = conn.execute(
+        "SELECT count(*) FROM stage_events WHERE campaign_person_id = %s", (cp_id,)
+    ).fetchone()
+    assert events == 1
+
+
+def test_profile_update_frozen_past_the_gate(client, conn, monkeypatch):
+    campaign_id = make_campaign(client, "org_a")
+    cp_id = add_candidate(client, "org_a", campaign_id, "Dana Okafor")
+    monkeypatch.setattr(step_module, "model_client", FakeModel("strong"))
+    run_once(conn)
+    client.post(f"/campaign-people/{cp_id}/decision",
+                json={"verdict": "approve"}, headers=auth("org_a"))
+
+    response = client.patch(
+        f"/campaign-people/{cp_id}/profile",
+        json={"raw_profile": "too late"},
+        headers=auth("org_a"),
+    )
+    assert response.status_code == 409
 
 
 def test_decision_works_without_a_profile_row(client, conn, seed):

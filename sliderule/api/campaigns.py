@@ -215,7 +215,9 @@ def add_person(
         (org_id, campaign_id, person_id),
     ).fetchone()
     if cp_row is None:
-        conn.commit()
+        # Already in the campaign: undo the name/profile overwrites too — a
+        # rejected request must not desync raw_text from the stored evaluation.
+        conn.rollback()
         raise HTTPException(
             status_code=409, detail="person is already in this campaign"
         )
@@ -273,7 +275,7 @@ def decide(
         "SELECT cp.id, pr.bucket, pr.ai_reasoning"
         "  FROM campaign_people cp"
         "  JOIN campaigns c ON c.id = cp.campaign_id"
-        "  JOIN person_profiles pr ON pr.person_id = cp.person_id"
+        "  LEFT JOIN person_profiles pr ON pr.person_id = cp.person_id"
         "   AND pr.role_wanted_id = c.role_wanted_id"
         " WHERE cp.id = %s AND cp.organization_id = %s",
         (campaign_person_id, org_id),
@@ -324,14 +326,23 @@ def approve_all_strong(
         (campaign_id,),
     ).fetchall()
     approved = 0
+    skipped = 0
     for cp_id, ai_reasoning in rows:
-        conn.execute(
-            "INSERT INTO decisions (organization_id, campaign_person_id,"
-            " verdict, reason, ai_said)"
-            " VALUES (%s, %s, 'approve', 'approve all strong', %s)",
-            (org_id, cp_id, Jsonb({"bucket": "strong", "reasoning": ai_reasoning})),
-        )
-        transition(conn, cp_id, "approved", "human", "approve all strong")
+        try:
+            # per-person savepoint: a person moved concurrently (raced with an
+            # individual decision) is skipped, never failing the whole batch
+            with conn.transaction():
+                conn.execute(
+                    "INSERT INTO decisions (organization_id, campaign_person_id,"
+                    " verdict, reason, ai_said)"
+                    " VALUES (%s, %s, 'approve', 'approve all strong', %s)",
+                    (org_id, cp_id,
+                     Jsonb({"bucket": "strong", "reasoning": ai_reasoning})),
+                )
+                transition(conn, cp_id, "approved", "human", "approve all strong")
+        except (IllegalTransition, ActorNotAllowed):
+            skipped += 1
+            continue
         approved += 1
     conn.commit()
-    return {"approved": approved}
+    return {"approved": approved, "skipped": skipped}

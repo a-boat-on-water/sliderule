@@ -156,7 +156,7 @@ def test_approve_all_strong_skips_possible(client, conn, monkeypatch):
     assert stages == {"Strong One": "approved", "Possible One": "screened"}
 
 
-def test_duplicate_person_in_campaign_is_409(client, conn):
+def test_duplicate_person_in_campaign_is_409_and_writes_nothing(client, conn):
     campaign_id = make_campaign(client, "org_a")
     add_candidate(client, "org_a", campaign_id, "Dana Okafor",
                   linkedin="linkedin.com/in/dana-okafor")
@@ -168,6 +168,63 @@ def test_duplicate_person_in_campaign_is_409(client, conn):
         headers=auth("org_a"),
     )
     assert dup.status_code == 409  # same identity key -> same person
+
+    # the rejected request must not have overwritten anything: the stored
+    # evaluation would otherwise describe text the model never saw
+    name, raw_text = conn.execute(
+        "SELECT p.name, pr.raw_text FROM people p"
+        " JOIN person_profiles pr ON pr.person_id = p.id"
+    ).fetchone()
+    assert name == "Dana Okafor"
+    assert "messier name" not in raw_text
+
+
+def test_approve_all_strong_skips_raced_person(client, conn, monkeypatch):
+    import sliderule.api.campaigns as campaigns_module
+    from sliderule.transition import IllegalTransition
+
+    campaign_id = make_campaign(client, "org_a")
+    add_candidate(client, "org_a", campaign_id, "First Strong")
+    add_candidate(client, "org_a", campaign_id, "Second Strong")
+    monkeypatch.setattr(step_module, "model_client", FakeModel("strong"))
+    run_once(conn)
+    run_once(conn)
+
+    real_transition = campaigns_module.transition
+    raced: list[int] = []
+
+    def racy_transition(conn_, cp_id, *args, **kwargs):
+        if not raced:  # first person "moved concurrently"
+            raced.append(cp_id)
+            raise IllegalTransition("no edge approved -> approved")
+        return real_transition(conn_, cp_id, *args, **kwargs)
+
+    monkeypatch.setattr(campaigns_module, "transition", racy_transition)
+    response = client.post(
+        f"/campaigns/{campaign_id}/approve-all-strong", headers=auth("org_a")
+    )
+    assert response.status_code == 200
+    assert response.json() == {"approved": 1, "skipped": 1}
+    # the raced person keeps no orphaned decision row
+    (decisions,) = conn.execute(
+        "SELECT count(*) FROM decisions WHERE campaign_person_id = %s",
+        (raced[0],),
+    ).fetchone()
+    assert decisions == 0
+
+
+def test_decision_works_without_a_profile_row(client, conn, seed):
+    ids = seed(stage="screened")  # seed creates no person_profiles row
+    org = conn.execute(
+        "SELECT clerk_org_id FROM organizations WHERE id = %s", (ids["org_id"],)
+    ).fetchone()[0]
+    response = client.post(
+        f"/campaign-people/{ids['campaign_person_id']}/decision",
+        json={"verdict": "reject", "reason": "not a fit"},
+        headers=auth(org),
+    )
+    assert response.status_code == 200
+    assert response.json()["stage"] == "rejected"
 
 
 def test_tenancy_org_b_cannot_see_org_a(client, conn):

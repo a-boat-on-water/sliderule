@@ -93,6 +93,10 @@ STAGE_ORDER = [
     "replied", "screening_call", "interview", "hired",
     "rejected", "declined", "no_reply", "parked", "opted_out",
 ]
+TERMINAL_STAGES = ["rejected", "declined", "no_reply", "parked", "opted_out"]
+
+assert set(STAGE_ORDER) == STAGES, "STAGE_ORDER out of sync with GRAPH"
+assert set(TERMINAL_STAGES) < STAGES, "TERMINAL_STAGES out of sync with GRAPH"
 
 
 def transition(

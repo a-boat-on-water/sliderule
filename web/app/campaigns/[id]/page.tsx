@@ -5,9 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, useApi } from "../../../lib/api";
 
-const ACTIVE_STAGES = [
-  "sourced", "screened", "approved", "contactable", "contacted", "replied",
-];
+type Stages = { active: string[]; terminal: string[] };
 
 type Card = {
   id: number;
@@ -33,6 +31,7 @@ export default function CampaignPage() {
   const api = useApi();
   const [board, setBoard] = useState<Record<string, Card[]>>({});
   const [review, setReview] = useState<ReviewCard[]>([]);
+  const [stages, setStages] = useState<Stages | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -53,10 +52,17 @@ export default function CampaignPage() {
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !orgId) return;
+    // board columns come from the same source that enforces the graph
+    api("/stages").then((s) =>
+      setStages({
+        active: s.order.filter((st: string) => !s.terminal.includes(st)),
+        terminal: s.terminal,
+      }),
+    );
     reload();
     const timer = setInterval(reload, 10_000); // pick up worker evaluations
     return () => clearInterval(timer);
-  }, [isLoaded, isSignedIn, orgId, reload]);
+  }, [isLoaded, isSignedIn, orgId, api, reload]);
 
   const decide = async (cpId: number, verdict: "approve" | "reject") => {
     let reason: string | null = null;
@@ -96,7 +102,7 @@ export default function CampaignPage() {
 
   const strongCount = review.filter((c) => c.bucket === "strong").length;
   const terminal = Object.entries(board)
-    .filter(([stage]) => !ACTIVE_STAGES.includes(stage))
+    .filter(([stage]) => stages?.terminal.includes(stage))
     .map(([stage, cards]) => `${stage} ${cards.length}`)
     .join(" · ");
 
@@ -105,7 +111,7 @@ export default function CampaignPage() {
       {error && <div className="errband mono">{error}</div>}
 
       <div className="cols">
-        {ACTIVE_STAGES.map((stage) => (
+        {(stages?.active ?? []).map((stage) => (
           <div key={stage} className={`col ${stage === "screened" ? "gate" : ""}`}>
             <div className="colh">
               <span className="lbl">

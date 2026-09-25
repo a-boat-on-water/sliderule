@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sliderule.api import campaigns, filings
 from sliderule.api.auth import AuthContext, ClerkVerifier, TokenVerifier, get_auth
-from sliderule.transition import GRAPH, STAGE_ORDER
+from sliderule.transition import GRAPH, STAGE_ORDER, TERMINAL_STAGES
 
 
 def create_app(token_verifier: TokenVerifier | None = None) -> FastAPI:
@@ -37,6 +37,7 @@ def create_app(token_verifier: TokenVerifier | None = None) -> FastAPI:
         dashboard draws the board from the same source that enforces it."""
         return {
             "order": STAGE_ORDER,
+            "terminal": TERMINAL_STAGES,
             "graph": {
                 from_stage: {to: sorted(actors) for to, actors in edges.items()}
                 for from_stage, edges in GRAPH.items()

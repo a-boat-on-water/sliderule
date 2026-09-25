@@ -38,15 +38,21 @@ class AnthropicModelClient:
         return self._client
 
     def complete_structured(self, *, system: str, user: str, schema: dict) -> dict:
+        # Adaptive thinking is on by default and shares the max_tokens budget
+        # with the answer — keep generous headroom so the JSON never truncates.
         response = self._anthropic().messages.create(
             model=self._model,
-            max_tokens=2048,
+            max_tokens=8192,
             system=system,
             output_config={"format": {"type": "json_schema", "schema": schema}},
             messages=[{"role": "user", "content": user}],
         )
         if response.stop_reason == "refusal":
             raise RuntimeError("model declined the request (stop_reason=refusal)")
+        if response.stop_reason == "max_tokens":
+            raise RuntimeError(
+                "model output truncated at max_tokens; the JSON is unusable"
+            )
         text = next(
             (block.text for block in response.content if block.type == "text"), None
         )

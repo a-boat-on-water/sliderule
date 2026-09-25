@@ -20,6 +20,17 @@ def test_non_linkedin_url_is_rejected():
         normalize_linkedin("https://example.com/in/someone")
     with pytest.raises(ValueError):
         normalize_linkedin("https://linkedin.com/")
+    # substring lookalikes must not mint identity keys
+    with pytest.raises(ValueError):
+        normalize_linkedin("https://linkedin.com.evil-tracker.co/in/dana-okafor")
+    with pytest.raises(ValueError):
+        normalize_linkedin("https://mylinkedin.company.com/in/dana")
+
+
+def test_linkedin_subdomains_are_accepted():
+    assert normalize_linkedin("https://uk.linkedin.com/in/dana-okafor") == (
+        "uk.linkedin.com/in/dana-okafor"
+    )
 
 
 def test_identity_key_prefers_linkedin():

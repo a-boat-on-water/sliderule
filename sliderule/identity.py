@@ -14,7 +14,7 @@ def normalize_linkedin(url: str) -> str:
     parsed = urlparse(raw)
     host = parsed.netloc.removeprefix("www.")
     path = parsed.path.rstrip("/")
-    if "linkedin.com" not in host or not path:
+    if (host != "linkedin.com" and not host.endswith(".linkedin.com")) or not path:
         raise ValueError(f"not a LinkedIn profile URL: {url!r}")
     return f"{host}{path}"
 

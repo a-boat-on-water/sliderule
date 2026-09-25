@@ -1,14 +1,27 @@
-# Production: API + worker on one host. Secrets come from .env.production
-# (never committed). Migrations run once at deploy:
+# Production: Caddy (auto-HTTPS) + API + worker on one host. Secrets come
+# from .env.production (never committed). Migrations run once at deploy:
 #   docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 services:
+  caddy:
+    image: caddy:2
+    container_name: sliderule-caddy
+    env_file: .env.production   # SLIDERULE_DOMAIN
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
   api:
     image: sliderule
     build: .
     container_name: sliderule-api
     env_file: .env.production
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     restart: unless-stopped
 
   worker:
@@ -18,3 +31,7 @@ services:
     command: ["python", "-m", "sliderule.worker"]
     env_file: .env.production
     restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

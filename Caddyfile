@@ -1,0 +1,6 @@
+# Production reverse proxy. SLIDERULE_DOMAIN comes from .env.production
+# (e.g. sliderule.duckdns.org). Caddy obtains and renews the Let's Encrypt
+# certificate automatically.
+{$SLIDERULE_DOMAIN} {
+	reverse_proxy api:8000
+}

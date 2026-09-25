@@ -2,7 +2,7 @@
 
 import { useAuth } from "@clerk/nextjs";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, useApi } from "../../../lib/api";
 
 type Stages = { active: string[]; terminal: string[] };
@@ -35,7 +35,9 @@ export default function CampaignPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showBoard, setShowBoard] = useState(false);
 
+  const autoOpened = useRef(false);
   const reload = useCallback(() => {
     Promise.all([
       api(`/campaigns/${id}/board`),
@@ -45,6 +47,11 @@ export default function CampaignPage() {
         setBoard(b.board);
         setReview(r.review);
         setError(null);
+        // an empty campaign opens straight onto the add form, once
+        if (!autoOpened.current && Object.keys(b.board).length === 0) {
+          autoOpened.current = true;
+          setShowAdd(true);
+        }
       })
       .catch((err: unknown) =>
         setError(err instanceof ApiError ? err.message : String(err)),
@@ -130,6 +137,9 @@ export default function CampaignPage() {
   }
 
   const strongCount = review.filter((c) => c.bucket === "strong").length;
+  const stageCounts = (stages?.active ?? [])
+    .filter((stage) => (board[stage]?.length ?? 0) > 0)
+    .map((stage) => `${stage.replace("_", " ")} ${board[stage].length}`);
   const terminal = Object.entries(board)
     .filter(([stage]) => stages?.terminal.includes(stage))
     .map(([stage, cards]) => `${stage} ${cards.length}`)
@@ -140,31 +150,41 @@ export default function CampaignPage() {
       {error && <div className="errband mono">{error}</div>}
       {notice && <div className="noticeband mono">{notice}</div>}
 
-      <div className="cols">
-        {(stages?.active ?? []).map((stage) => (
-          <div key={stage} className={`col ${stage === "screened" ? "gate" : ""}`}>
-            <div className="colh">
-              <span className="lbl">
-                {stage === "screened" ? "screened ⌾" : stage.replace("_", " ")}
-              </span>
-              <span className="n">{board[stage]?.length ?? 0}</span>
-            </div>
-            {(board[stage] ?? []).map((card) => (
-              <div key={card.id} className="card">
-                <div className="nm">{card.person_name}</div>
-                {card.firm_name && <div className="fm">{card.firm_name}</div>}
-                {card.bucket && (
-                  <span className={`bkt bkt-${card.bucket}`}>{card.bucket}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        ))}
+      <div className="sectionh" style={{ borderTop: 0 }}>
+        <span className="lbl mono">
+          {stageCounts.length > 0 ? stageCounts.join(" · ") : "no candidates yet"}
+          {terminal ? ` · ${terminal}` : ""}
+        </span>
+        <button
+          className="ghostbtn"
+          style={{ marginLeft: "auto" }}
+          onClick={() => setShowBoard((v) => !v)}
+        >
+          {showBoard ? "Hide board" : "Board"}
+        </button>
       </div>
-      {terminal && (
-        <div style={{ padding: "6px 16px", color: "var(--ink-3)", fontSize: 11 }}
-             className="mono">
-          parked / terminal: {terminal}
+
+      {showBoard && (
+        <div className="cols">
+          {(stages?.active ?? []).map((stage) => (
+            <div key={stage} className={`col ${stage === "screened" ? "gate" : ""}`}>
+              <div className="colh">
+                <span className="lbl">
+                  {stage === "screened" ? "screened ⌾" : stage.replace("_", " ")}
+                </span>
+                <span className="n">{board[stage]?.length ?? 0}</span>
+              </div>
+              {(board[stage] ?? []).map((card) => (
+                <div key={card.id} className="card">
+                  <div className="nm">{card.person_name}</div>
+                  {card.firm_name && <div className="fm">{card.firm_name}</div>}
+                  {card.bucket && (
+                    <span className={`bkt bkt-${card.bucket}`}>{card.bucket}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       )}
 
@@ -265,30 +285,37 @@ function AddCandidateForm({
 
   return (
     <div className="formgrid" style={{ borderBottom: "1px solid var(--rule-2)" }}>
-      <label>
+      <label className="wide">
         <span className="lbl">Name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </label>
-      <label>
-        <span className="lbl">LinkedIn URL · optional</span>
-        <input value={linkedin} onChange={(e) => setLinkedin(e.target.value)}
-               placeholder="linkedin.com/in/…" />
-      </label>
-      <label>
-        <span className="lbl">Firm · optional</span>
-        <input value={firm} onChange={(e) => setFirm(e.target.value)}
-               placeholder="MG Engineering D.P.C." />
-      </label>
-      <label>
-        <span className="lbl">Location · optional</span>
-        <input value={location} onChange={(e) => setLocation(e.target.value)} />
-      </label>
       <label className="wide">
-        <span className="lbl">Profile text · pasted from anywhere</span>
+        <span className="lbl">Profile · paste from anywhere</span>
         <textarea value={profile} onChange={(e) => setProfile(e.target.value)}
                   placeholder="Paste the resume, LinkedIn about section, bio —
-whatever evidence exists. The evaluation reads exactly this." />
+whatever evidence exists. Screening reads exactly this." />
       </label>
+      <details className="wide">
+        <summary className="lbl" style={{ cursor: "pointer" }}>
+          More · LinkedIn, firm, location
+        </summary>
+        <div className="formgrid" style={{ padding: "10px 0 0" }}>
+          <label>
+            <span className="lbl">LinkedIn URL</span>
+            <input value={linkedin} onChange={(e) => setLinkedin(e.target.value)}
+                   placeholder="linkedin.com/in/…" />
+          </label>
+          <label>
+            <span className="lbl">Firm</span>
+            <input value={firm} onChange={(e) => setFirm(e.target.value)}
+                   placeholder="MG Engineering D.P.C." />
+          </label>
+          <label>
+            <span className="lbl">Location</span>
+            <input value={location} onChange={(e) => setLocation(e.target.value)} />
+          </label>
+        </div>
+      </details>
       <div className="wide">
         <button className="stampbtn" disabled={!name.trim() || !profile.trim() || busy}
                 onClick={submit}>

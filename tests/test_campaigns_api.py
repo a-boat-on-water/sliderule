@@ -69,6 +69,34 @@ def add_candidate(client, org: str, campaign_id: int, name: str,
     return response.json()["campaign_person_id"]
 
 
+def test_free_text_rubric_flows_end_to_end(client, conn, monkeypatch):
+    """The simple-UI path: one description sentence instead of three lists."""
+    role = client.post(
+        "/roles",
+        json={"title": "PT mechanical engineer",
+              "rubric": {"description": "NYC production engineer, no principals"}},
+        headers=auth("org_a"),
+    )
+    campaign = client.post(
+        "/campaigns",
+        json={"name": "PT mechanical — Sep 2026",
+              "role_wanted_id": role.json()["id"]},
+        headers=auth("org_a"),
+    )
+    campaign_id = campaign.json()["id"]
+    add_candidate(client, "org_a", campaign_id, "Dana Okafor")
+
+    fake = FakeModel("strong")
+    monkeypatch.setattr(step_module, "model_client", fake)
+    run_once(conn)
+
+    # the free-text rubric reaches the model verbatim
+    (call,) = fake.calls
+    assert "no principals" in call["user"]
+    review = client.get(f"/campaigns/{campaign_id}/review", headers=auth("org_a"))
+    assert len(review.json()["review"]) == 1
+
+
 def test_org_is_provisioned_from_the_token(client, conn):
     response = client.get("/campaigns", headers=auth("org_new"))
     assert response.status_code == 200

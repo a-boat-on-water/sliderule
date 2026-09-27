@@ -37,12 +37,22 @@ def seed_filings(conn):
         (firm_b, "nyc_dob", "B-1:plumbing", "plumbing",
          *STATEN_ISLAND, date(2025, 3, 1)),
     ]
+    # firm A: one engineer (Ada, PE 111) signs A-1 and A-2; firm B: Bo, no license
+    applicants = {
+        "A-1:mechanical_systems": ("Ada Lovelace", "PE", "111"),
+        "A-2:mechanical_systems": ("ADA LOVELACE", "PE", "111"),
+        "A-2:plumbing": ("ADA LOVELACE", "PE", "111"),
+        "B-1:plumbing": ("Bo Diddley", None, None),
+    }
     for firm_id, source, ext, work_type, lat, lng, filed in rows:
+        name, title, lic = applicants[ext]
         conn.execute(
             "INSERT INTO filings (firm_id, source, external_id, work_type,"
-            " latitude, longitude, filed_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (firm_id, source, ext, work_type, lat, lng, filed),
+            " latitude, longitude, filed_at, project_address,"
+            " applicant_name, applicant_title, applicant_license)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (firm_id, source, ext, work_type, lat, lng, filed, f"{ext} St",
+             name, title, lic),
         )
     conn.commit()
     return {"firm_a": firm_a, "firm_b": firm_b}
@@ -100,3 +110,30 @@ def test_date_filter(client):
 def test_partial_geo_params_are_rejected(client):
     response = client.get("/filings/search", params={"lat": 40.0}, headers=AUTH)
     assert response.status_code == 422
+
+
+def test_engineers_group_by_license_across_name_casing(client):
+    res = client.get("/engineers/search", headers=AUTH)
+    assert res.status_code == 200
+    engineers = res.json()["engineers"]
+    assert [(e["name"].lower(), e["license"], e["filing_count"]) for e in engineers] == [
+        ("ada lovelace", "111", 3), ("bo diddley", None, 1),
+    ]
+    ada = engineers[0]
+    assert ada["title"] == "PE"
+    assert ada["firm_name"] == "Midtown Mechanical PC"
+    assert ada["filings_by_work_type"] == {"mechanical_systems": 2, "plumbing": 1}
+    assert ada["last_filed_at"] == "2026-07-01"
+    assert set(ada["recent_projects"]) == {
+        "A-1:mechanical_systems St", "A-2:mechanical_systems St", "A-2:plumbing St"}
+
+
+def test_engineers_respect_filing_filters(client):
+    res = client.get("/engineers/search", params={"work_type": "plumbing"},
+                     headers=AUTH)
+    assert [(e["name"].lower(), e["filing_count"]) for e in res.json()["engineers"]] == [
+        ("ada lovelace", 1), ("bo diddley", 1),
+    ]
+    res = client.get("/engineers/search", params={"filed_from": "2026-01-01"},
+                     headers=AUTH)
+    assert [e["name"].lower() for e in res.json()["engineers"]] == ["ada lovelace"]

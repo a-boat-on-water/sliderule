@@ -39,6 +39,9 @@ def test_yields_one_filing_per_flagged_work_type():
     assert keri.firm_address == "Suite 303 140 Mountain Ave,, Springfield, NJ, 07081"
     assert keri.latitude == 40.786585
     assert keri.filed_at == date(2026, 8, 14)
+    assert keri.applicant_name == "Mitul Patel"
+    assert keri.applicant_title == "PE"
+    assert keri.applicant_license == "094211"
 
     # withdrawn filings can lack filing_date; that must not blow up
     assert by_external_id["S01147390-S1:mechanical_systems"].filed_at is None

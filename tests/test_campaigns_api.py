@@ -102,7 +102,16 @@ def test_full_flow_add_evaluate_review_approve(client, conn, monkeypatch):
     assert decision.json()["stage"] == "approved"
 
     board = client.get(f"/campaigns/{campaign_id}/board", headers=auth("org_a"))
-    assert [c["id"] for c in board.json()["board"]["approved"]] == [cp_id]
+    (approved_card,) = board.json()["board"]["approved"]
+    assert approved_card["id"] == cp_id
+    assert approved_card["contact_status"] is None  # nothing found yet
+
+    # approval is the gate for the first paid step: find_contact is queued
+    queued = conn.execute(
+        "SELECT step, status FROM jobs WHERE campaign_person_id = %s"
+        " AND step = 'find_contact'", (cp_id,),
+    ).fetchall()
+    assert queued == [("find_contact", "queued")]
 
     # decision row recorded what the AI said
     verdict, ai_said = conn.execute(
@@ -154,6 +163,9 @@ def test_approve_all_strong_skips_possible(client, conn, monkeypatch):
     stages = {c["person_name"]: c["stage"]
               for cards in board.json()["board"].values() for c in cards}
     assert stages == {"Strong One": "approved", "Possible One": "screened"}
+    # one find_contact job per approved person, none for the screened one
+    assert conn.execute(
+        "SELECT count(*) FROM jobs WHERE step = 'find_contact'").fetchone()[0] == 1
 
 
 def test_duplicate_person_in_campaign_is_409_and_writes_nothing(client, conn):

@@ -131,18 +131,27 @@ def campaign_board(
 ) -> dict:
     _campaign_or_404(conn, campaign_id, org_id)
     rows = conn.execute(
-        "SELECT cp.id, cp.stage, cp.next_action_at, p.name, f.name, pr.bucket"
+        "SELECT cp.id, cp.stage, cp.next_action_at, p.name, f.name, pr.bucket,"
+        "       cm.address, cm.verify_status"
         "  FROM campaign_people cp"
         "  JOIN campaigns c ON c.id = cp.campaign_id"
         "  JOIN people p ON p.id = cp.person_id"
         "  LEFT JOIN firms f ON f.id = p.firm_id"
         "  LEFT JOIN person_profiles pr"
         "    ON pr.person_id = p.id AND pr.role_wanted_id = c.role_wanted_id"
+        # best contact method: valid first, then unverified/risky, invalid last
+        "  LEFT JOIN LATERAL ("
+        "    SELECT address, verify_status FROM contact_methods"
+        "     WHERE person_id = p.id"
+        "     ORDER BY CASE verify_status WHEN 'valid' THEN 0"
+        "              WHEN 'unverified' THEN 1 WHEN 'risky' THEN 2 ELSE 3 END, id"
+        "     LIMIT 1) cm ON true"
         " WHERE cp.campaign_id = %s"
         " ORDER BY cp.id",
         (campaign_id,),
     ).fetchall()
-    keys = ("id", "stage", "next_action_at", "person_name", "firm_name", "bucket")
+    keys = ("id", "stage", "next_action_at", "person_name", "firm_name", "bucket",
+            "contact_address", "contact_status")
     board: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         card = dict(zip(keys, row))
@@ -301,6 +310,10 @@ def decide(
     except (IllegalTransition, ActorNotAllowed) as exc:
         conn.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if to_stage == "approved":
+        # the first paid step, and only ever behind this human gate
+        enqueue(conn, "find_contact", campaign_person_id=campaign_person_id,
+                organization_id=org_id)
     conn.commit()
     return {"stage": to_stage}
 
@@ -389,5 +402,7 @@ def approve_all_strong(
              Jsonb({"bucket": "strong", "reasoning": ai_reasoning})),
         )
         transition(conn, cp_id, "approved", "human", "approve all strong")
+        enqueue(conn, "find_contact", campaign_person_id=cp_id,
+                organization_id=org_id)
     conn.commit()
     return {"approved": len(rows)}

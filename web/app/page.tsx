@@ -14,6 +14,10 @@ export default function Home() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // role created by a previous attempt whose campaign POST failed: reuse it
+  // on retry (same text) instead of inserting a duplicate roles_wanted row
+  const [createdRole, setCreatedRole] = useState<{ id: number; text: string } | null>(null);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !orgId) return;
@@ -25,25 +29,33 @@ export default function Home() {
           setReady(true);
         }
       })
-      .catch(() => setReady(true));
+      .catch((err) =>
+        setLoadError(err instanceof ApiError ? err.message : String(err)),
+      );
   }, [isLoaded, isSignedIn, orgId, api, router]);
 
   const start = async () => {
     setBusy(true);
     setError(null);
     try {
-      const title = text.trim().split("\n")[0].slice(0, 60);
-      const role = await api("/roles", {
-        method: "POST",
-        body: { title, rubric: { description: text.trim() } },
-      });
+      const description = text.trim();
+      const title = description.split(/\r?\n/)[0].trim().slice(0, 60);
+      let roleId = createdRole?.text === description ? createdRole.id : null;
+      if (roleId === null) {
+        const role = await api("/roles", {
+          method: "POST",
+          body: { title, rubric: { description } },
+        });
+        roleId = role.id as number;
+        setCreatedRole({ id: roleId, text: description });
+      }
       const month = new Date().toLocaleString("en-US", {
         month: "short",
         year: "numeric",
       });
       const campaign = await api("/campaigns", {
         method: "POST",
-        body: { name: `${title} — ${month}`, role_wanted_id: role.id },
+        body: { name: `${title} — ${month}`, role_wanted_id: roleId },
       });
       router.push(`/campaigns/${campaign.id}`);
     } catch (err) {
@@ -61,6 +73,15 @@ export default function Home() {
           Sign in and select your organization with the controls in the title
           block above to start finding engineers.
         </p>
+      </div>
+    );
+  }
+  if (loadError) {
+    return (
+      <div className="notice">
+        <h2>Couldn&apos;t reach sliderule</h2>
+        <p style={{ color: "var(--stamp)", fontSize: 12 }}>{loadError}</p>
+        <p>Reload to try again.</p>
       </div>
     );
   }

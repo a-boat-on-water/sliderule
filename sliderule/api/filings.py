@@ -128,3 +128,63 @@ def search_filings(
     keys = ("id", "firm_id", "firm_name", "work_type", "project_address",
             "latitude", "longitude", "filed_at")
     return {"filings": [dict(zip(keys, row)) for row in rows]}
+
+
+@router.get("/engineers/search")
+def search_engineers(
+    work_type: list[str] | None = Query(default=None),
+    filed_from: date | None = None,
+    filed_to: date | None = None,
+    lat: float | None = None,
+    lng: float | None = None,
+    radius_km: float | None = None,
+    firm_id: int | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    auth: AuthContext = Depends(get_auth),
+    conn: psycopg.Connection = Depends(get_conn),
+) -> dict:
+    """The applicants of record on matching filings: one row per licensed
+    professional per firm, ranked by how many matching filings they signed.
+    Grouped on license number when the source gives one (names vary in
+    casing and spelling), otherwise on lower(name)."""
+    where, params = _filing_filters(work_type, filed_from, filed_to, lat, lng, radius_km)
+    if firm_id is not None:
+        where += " AND f.firm_id = %(firm_id)s"
+        params["firm_id"] = firm_id
+    rows = conn.execute(
+        f"""
+        WITH matching AS (
+            SELECT f.firm_id, f.work_type, f.filed_at, f.project_address,
+                   f.applicant_name, f.applicant_title, f.applicant_license,
+                   coalesce(f.applicant_license, lower(f.applicant_name)) AS who
+              FROM filings f
+             WHERE {where} AND f.applicant_name IS NOT NULL
+        )
+        SELECT max(m.applicant_name) AS applicant,
+               max(m.applicant_title) AS title,
+               max(m.applicant_license) AS license,
+               fi.id, fi.name, fi.office_address,
+               count(*) AS filing_count,
+               max(m.filed_at) AS last_filed_at,
+               (SELECT jsonb_object_agg(t.work_type, t.n)
+                  FROM (SELECT work_type, count(*) AS n FROM matching x
+                         WHERE x.who = m.who AND x.firm_id = fi.id
+                         GROUP BY work_type) t) AS filings_by_work_type,
+               (SELECT array_agg(DISTINCT x.project_address)
+                  FROM (SELECT project_address FROM matching y
+                         WHERE y.who = m.who AND y.firm_id = fi.id
+                           AND y.project_address IS NOT NULL
+                         ORDER BY y.filed_at DESC NULLS LAST LIMIT 3) x
+               ) AS recent_projects
+          FROM matching m
+          JOIN firms fi ON fi.id = m.firm_id
+         GROUP BY m.who, fi.id
+         ORDER BY filing_count DESC, applicant
+         LIMIT %(limit)s
+        """,
+        {**params, "limit": limit},
+    ).fetchall()
+    keys = ("name", "title", "license", "firm_id", "firm_name", "firm_address",
+            "filing_count", "last_filed_at", "filings_by_work_type",
+            "recent_projects")
+    return {"engineers": [dict(zip(keys, row)) for row in rows]}

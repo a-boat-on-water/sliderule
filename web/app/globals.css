@@ -153,6 +153,9 @@ table.firms { border-collapse: collapse; width: 100%; }
        margin-top: 7px; }
 .bkt-strong { background: #1c5cab; color: #fff; }
 .bkt-possible { border: 1px solid var(--rule-2); color: var(--ink-2); }
+.ct-valid { border: 1px solid #1c5cab; color: #1c5cab; }
+.ct-unverified, .ct-risky { border: 1px dashed var(--rule-2); color: var(--ink-3); }
+.ct-invalid { border: 1px solid var(--stamp); color: var(--stamp); }
 
 /* review queue */
 .review-card { border: 1px solid var(--rule-2); background: var(--panel);

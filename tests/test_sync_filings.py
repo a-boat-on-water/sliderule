@@ -59,6 +59,29 @@ def test_sync_upserts_firms_and_filings(conn, fixture_source):
     }
 
 
+def test_sync_stores_and_backfills_the_applicant(conn, fixture_source):
+    run_sync(conn, key="sync-1")
+    rows = conn.execute(
+        "SELECT external_id, applicant_name, applicant_title, applicant_license"
+        " FROM filings ORDER BY external_id"
+    ).fetchall()
+    assert rows[0] == ("M00797798-I1:mechanical_systems", "Mitul Patel", "PE", "094211")
+    assert all(name for _, name, _, _ in rows)
+
+    # a row synced before the applicant columns existed is filled on rerun
+    conn.execute(
+        "UPDATE filings SET applicant_name = NULL, applicant_title = NULL,"
+        " applicant_license = NULL WHERE external_id = 'Q01042595-P2:plumbing'"
+    )
+    conn.commit()
+    run_sync(conn, key="sync-2")
+    (name, lic) = conn.execute(
+        "SELECT applicant_name, applicant_license FROM filings"
+        " WHERE external_id = 'Q01042595-P2:plumbing'"
+    ).fetchone()
+    assert (name, lic) == ("Manish Savani", "029410")
+
+
 def test_sync_is_idempotent_across_reruns(conn, fixture_source):
     run_sync(conn, key="sync-1")
     run_sync(conn, key="sync-2")  # same data, new job

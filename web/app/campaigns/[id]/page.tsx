@@ -13,6 +13,8 @@ type Card = {
   person_name: string;
   firm_name: string | null;
   bucket: string | null;
+  contact_address: string | null;
+  contact_status: string | null;
 };
 
 type ReviewCard = {
@@ -180,6 +182,13 @@ export default function CampaignPage() {
                   {card.firm_name && <div className="fm">{card.firm_name}</div>}
                   {card.bucket && (
                     <span className={`bkt bkt-${card.bucket}`}>{card.bucket}</span>
+                  )}
+                  {card.contact_status && (
+                    <span className={`bkt ct-${card.contact_status}`}
+                          title={card.contact_address ?? undefined}
+                          style={{ marginLeft: card.bucket ? 6 : 0 }}>
+                      {card.contact_status === "valid" ? "email ✓" : `email ${card.contact_status}`}
+                    </span>
                   )}
                 </div>
               ))}

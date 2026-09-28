@@ -40,6 +40,10 @@ SELECT_FIELDS = [
     "latitude",
     "longitude",
     "filing_date",
+    "applicant_first_name",
+    "applicant_last_name",
+    "applicant_professional_title",
+    "applicant_license",
     *WORK_TYPE_COLUMNS.values(),
 ]
 
@@ -121,6 +125,9 @@ class NycDob:
              row.get("state"), row.get("zip")],
             sep=", ",
         )
+        applicant_name = _join(
+            [row.get("applicant_first_name"), row.get("applicant_last_name")]
+        )
         for work_type, column in WORK_TYPE_COLUMNS.items():
             if (row.get(column) or "").upper() != "YES":
                 continue
@@ -134,4 +141,7 @@ class NycDob:
                 longitude=_parse_float(row.get("longitude")),
                 filed_at=_parse_filed_at(row.get("filing_date")),
                 firm_address=firm_address,
+                applicant_name=applicant_name,
+                applicant_title=_join([row.get("applicant_professional_title")]),
+                applicant_license=_join([row.get("applicant_license")]),
             )

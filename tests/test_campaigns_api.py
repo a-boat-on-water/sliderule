@@ -130,7 +130,16 @@ def test_full_flow_add_evaluate_review_approve(client, conn, monkeypatch):
     assert decision.json()["stage"] == "approved"
 
     board = client.get(f"/campaigns/{campaign_id}/board", headers=auth("org_a"))
-    assert [c["id"] for c in board.json()["board"]["approved"]] == [cp_id]
+    (approved_card,) = board.json()["board"]["approved"]
+    assert approved_card["id"] == cp_id
+    assert approved_card["contact_status"] is None  # nothing found yet
+
+    # approval is the gate for the first paid step: find_contact is queued
+    queued = conn.execute(
+        "SELECT step, status FROM jobs WHERE campaign_person_id = %s"
+        " AND step = 'find_contact'", (cp_id,),
+    ).fetchall()
+    assert queued == [("find_contact", "queued")]
 
     # decision row recorded what the AI said
     verdict, ai_said = conn.execute(
@@ -182,6 +191,9 @@ def test_approve_all_strong_skips_possible(client, conn, monkeypatch):
     stages = {c["person_name"]: c["stage"]
               for cards in board.json()["board"].values() for c in cards}
     assert stages == {"Strong One": "approved", "Possible One": "screened"}
+    # one find_contact job per approved person, none for the screened one
+    assert conn.execute(
+        "SELECT count(*) FROM jobs WHERE step = 'find_contact'").fetchone()[0] == 1
 
 
 def test_duplicate_person_in_campaign_is_409_and_writes_nothing(client, conn):
@@ -305,3 +317,76 @@ def test_tenancy_org_b_cannot_see_org_a(client, conn):
         json={"name": "Intruder", "raw_profile": "x"},
         headers=auth("org_b"),
     ).status_code == 404
+
+
+def test_add_engineer_from_filings_builds_profile_from_public_record(
+    client, conn, monkeypatch
+):
+    campaign_id = make_campaign(client, "org_a")
+    (firm_id,) = conn.execute(
+        "INSERT INTO firms (name, office_address)"
+        " VALUES ('Acme MEP PC', '1 Main St, Brooklyn, NY') RETURNING id"
+    ).fetchone()
+    for ext, wt, filed, addr in [
+        ("J-1:mechanical_systems", "mechanical_systems", "2026-05-01", "10 A St, Manhattan"),
+        ("J-2:mechanical_systems", "mechanical_systems", "2026-08-01", "20 B St, Queens"),
+        ("J-2:plumbing", "plumbing", "2026-08-01", "20 B St, Queens"),
+    ]:
+        conn.execute(
+            "INSERT INTO filings (firm_id, source, external_id, work_type,"
+            " filed_at, project_address, applicant_name, applicant_title,"
+            " applicant_license) VALUES (%s, 'nyc_dob', %s, %s, %s, %s,"
+            " 'Grace Hopper', 'PE', '777')",
+            (firm_id, ext, wt, filed, addr),
+        )
+    conn.commit()
+
+    res = client.post(
+        f"/campaigns/{campaign_id}/people/from-filings",
+        json={"name": "Grace Hopper", "firm_id": firm_id, "license": "777"},
+        headers=auth("org_a"),
+    )
+    assert res.status_code == 201, res.text
+    cp_id = res.json()["campaign_person_id"]
+
+    raw_text, source, location, person_firm = conn.execute(
+        "SELECT pr.raw_text, p.source, p.location, p.firm_id"
+        "  FROM campaign_people cp JOIN people p ON p.id = cp.person_id"
+        "  JOIN person_profiles pr ON pr.person_id = p.id WHERE cp.id = %s",
+        (cp_id,),
+    ).fetchone()
+    assert source == "nyc_dob"
+    assert location == "1 Main St, Brooklyn, NY"
+    assert person_firm == firm_id
+    assert "Grace Hopper, PE (license 777)" in raw_text
+    assert "3 NYC DOB filing(s) for Acme MEP PC" in raw_text
+    assert "2 mechanical, 1 plumbing" in raw_text
+    assert "between 2026-05-01 and 2026-08-01" in raw_text
+    assert "20 B St, Queens" in raw_text
+
+    # the same click twice is a 409, not a second candidate
+    dup = client.post(
+        f"/campaigns/{campaign_id}/people/from-filings",
+        json={"name": "Grace Hopper", "firm_id": firm_id, "license": "777"},
+        headers=auth("org_a"),
+    )
+    assert dup.status_code == 409
+
+    # evaluation was queued and runs on the built profile
+    monkeypatch.setattr(step_module, "model_client", FakeModel("strong"))
+    assert run_once(conn) is True
+    review = client.get(f"/campaigns/{campaign_id}/review", headers=auth("org_a"))
+    assert [c["person_name"] for c in review.json()["review"]] == ["Grace Hopper"]
+
+
+def test_add_engineer_unknown_at_firm_is_404(client, conn):
+    campaign_id = make_campaign(client, "org_a")
+    (firm_id,) = conn.execute(
+        "INSERT INTO firms (name) VALUES ('Nobody PC') RETURNING id").fetchone()
+    conn.commit()
+    res = client.post(
+        f"/campaigns/{campaign_id}/people/from-filings",
+        json={"name": "Ghost", "firm_id": firm_id},
+        headers=auth("org_a"),
+    )
+    assert res.status_code == 404

@@ -24,6 +24,10 @@ class PermitFiling:
     longitude: float | None = None
     filed_at: date | None = None
     firm_address: str | None = None
+    # the licensed professional who signed the filing
+    applicant_name: str | None = None
+    applicant_title: str | None = None     # PE, RA, ...
+    applicant_license: str | None = None
 
 
 class PermitSource(Protocol):

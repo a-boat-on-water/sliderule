@@ -1,0 +1,42 @@
+[
+  {
+    "request": {"note": "turn 1: derive domain from the firm website, look up the email"},
+    "response": {
+      "stop_reason": "tool_use",
+      "content": [
+        {"type": "text", "text": "The firm website is acme-eng.com; looking up Test Person there."},
+        {"type": "tool_use", "id": "toolu_01", "name": "find_email",
+         "input": {"first_name": "Test", "last_name": "Person", "domain": "acme-eng.com"}}
+      ]
+    }
+  },
+  {
+    "request": {"note": "turn 2: record the candidate the finder returned"},
+    "response": {
+      "stop_reason": "tool_use",
+      "content": [
+        {"type": "tool_use", "id": "toolu_02", "name": "record_contact_method",
+         "input": {"address": "tperson@acme-eng.com", "found_via": "hunter"}}
+      ]
+    }
+  },
+  {
+    "request": {"note": "turn 3: verify it"},
+    "response": {
+      "stop_reason": "tool_use",
+      "content": [
+        {"type": "tool_use", "id": "toolu_03", "name": "verify_email",
+         "input": {"address": "tperson@acme-eng.com"}}
+      ]
+    }
+  },
+  {
+    "request": {"note": "turn 4: done"},
+    "response": {
+      "stop_reason": "end_turn",
+      "content": [
+        {"type": "text", "text": "Verified: tperson@acme-eng.com (hunter, deliverable)."}
+      ]
+    }
+  }
+]

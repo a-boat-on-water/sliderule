@@ -174,17 +174,15 @@ class PersonIn(BaseModel):
     raw_profile: str = Field(min_length=1)
 
 
-@router.post("/campaigns/{campaign_id}/people", status_code=201)
-def add_person(
-    campaign_id: int,
-    body: PersonIn,
-    org_id: int = Depends(get_org_id),
-    conn: psycopg.Connection = Depends(get_conn),
+def _add_person(
+    conn: psycopg.Connection, org_id: int, campaign_id: int, body: PersonIn,
+    firm_id: int | None = None,
 ) -> dict:
+    """Upsert person + profile, attach to the campaign, enqueue evaluation.
+    Commits. firm_id, when given, wins over body.firm_name."""
     _, role_wanted_id = _campaign_or_404(conn, campaign_id, org_id)
 
-    firm_id = None
-    if body.firm_name:
+    if firm_id is None and body.firm_name:
         (firm_id,) = conn.execute(
             "INSERT INTO firms (name) VALUES (%s)"
             " ON CONFLICT ((lower(name))) DO UPDATE SET updated_at = now()"
@@ -239,6 +237,100 @@ def add_person(
             organization_id=org_id)
     conn.commit()
     return {"campaign_person_id": campaign_person_id, "person_id": person_id}
+
+
+@router.post("/campaigns/{campaign_id}/people", status_code=201)
+def add_person(
+    campaign_id: int,
+    body: PersonIn,
+    org_id: int = Depends(get_org_id),
+    conn: psycopg.Connection = Depends(get_conn),
+) -> dict:
+    return _add_person(conn, org_id, campaign_id, body)
+
+
+class EngineerIn(BaseModel):
+    """An applicant of record from /engineers/search."""
+
+    name: str = Field(min_length=1)
+    firm_id: int
+    license: str | None = None
+
+
+WORK_TYPE_LABELS = {
+    "mechanical_systems": "mechanical", "plumbing": "plumbing",
+    "sprinkler": "sprinkler",
+}
+
+
+def _profile_from_filings(
+    conn: psycopg.Connection, body: EngineerIn
+) -> tuple[str, str | None, str | None]:
+    """Build the raw profile text from the public record: what they signed,
+    for whom, how often, where. Returns (raw_profile, location, firm_name)."""
+    if body.license:
+        who = "f.applicant_license = %(license)s"
+    else:
+        who = "lower(f.applicant_name) = lower(%(name)s)"
+    rows = conn.execute(
+        f"""
+        SELECT f.work_type, f.filed_at, f.project_address, f.applicant_title,
+               f.applicant_license, f.applicant_name, fi.name, fi.office_address
+          FROM filings f JOIN firms fi ON fi.id = f.firm_id
+         WHERE f.firm_id = %(firm_id)s AND {who}
+         ORDER BY f.filed_at DESC NULLS LAST
+        """,
+        {"firm_id": body.firm_id, "license": body.license, "name": body.name},
+    ).fetchall()
+    if not rows:
+        raise HTTPException(
+            status_code=404, detail="no filings for that applicant at that firm"
+        )
+    title = next((r[3] for r in rows if r[3]), None)
+    license_no = next((r[4] for r in rows if r[4]), body.license)
+    firm_name, office = rows[0][6], rows[0][7]
+    by_type: dict[str, int] = {}
+    for r in rows:
+        by_type[r[0]] = by_type.get(r[0], 0) + 1
+    dates = [r[1] for r in rows if r[1]]
+    projects = []
+    for r in rows:
+        if r[2] and r[2] not in projects:
+            projects.append(r[2])
+        if len(projects) == 5:
+            break
+    counts = ", ".join(
+        f"{n} {WORK_TYPE_LABELS.get(t, t)}" for t, n in sorted(by_type.items())
+    )
+    lines = [
+        f"{body.name}" + (f", {title}" if title else "")
+        + (f" (license {license_no})" if license_no else "") + ".",
+        f"Applicant of record on {len(rows)} NYC DOB filing(s) for {firm_name}"
+        + (f", {office}" if office else "") + f": {counts}.",
+    ]
+    if dates:
+        lines.append(f"Filed between {min(dates)} and {max(dates)}.")
+    if projects:
+        lines.append("Recent project addresses: " + "; ".join(projects) + ".")
+    lines.append("Source: NYC DOB NOW job application filings (public record).")
+    return "\n".join(lines), office, firm_name
+
+
+@router.post("/campaigns/{campaign_id}/people/from-filings", status_code=201)
+def add_engineer_from_filings(
+    campaign_id: int,
+    body: EngineerIn,
+    org_id: int = Depends(get_org_id),
+    conn: psycopg.Connection = Depends(get_conn),
+) -> dict:
+    """One click from the engineers list: the profile text is what the public
+    record says, so evaluate_profile has real evidence to judge."""
+    raw_profile, office, firm_name = _profile_from_filings(conn, body)
+    person = PersonIn(
+        name=body.name, firm_name=firm_name, location=office,
+        source="nyc_dob", raw_profile=raw_profile,
+    )
+    return _add_person(conn, org_id, campaign_id, person, firm_id=body.firm_id)
 
 
 # ----------------------------------------------------------- review queue

@@ -54,14 +54,20 @@ def _flush(conn: psycopg.Connection, batch: list[PermitFiling]) -> None:
     with conn.cursor() as cur:
         cur.executemany(
             "INSERT INTO filings (firm_id, source, external_id, work_type,"
-            " project_address, latitude, longitude, filed_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
-            " ON CONFLICT (source, external_id) DO NOTHING",
+            " project_address, latitude, longitude, filed_at,"
+            " applicant_name, applicant_title, applicant_license)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            # rerun fills applicant fields on rows synced before they existed
+            " ON CONFLICT (source, external_id) DO UPDATE SET"
+            "   applicant_name = coalesce(filings.applicant_name, excluded.applicant_name),"
+            "   applicant_title = coalesce(filings.applicant_title, excluded.applicant_title),"
+            "   applicant_license = coalesce(filings.applicant_license, excluded.applicant_license)",
             [
                 (
                     firm_ids[r.firm_name.lower()], r.source, r.external_id,
                     r.work_type, r.project_address, r.latitude, r.longitude,
-                    r.filed_at,
+                    r.filed_at, r.applicant_name, r.applicant_title,
+                    r.applicant_license,
                 )
                 for r in batch
             ],

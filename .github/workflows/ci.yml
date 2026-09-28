@@ -23,6 +23,15 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e .
+      # The ci database is shared across branches; a PR whose migrations lag
+      # another PR's would otherwise fail on an unknown alembic revision.
+      - name: Reset ci schema
+        run: |
+          python - <<'PY'
+          import os, psycopg
+          with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as c:
+              c.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+          PY
       - run: alembic upgrade head
       - run: pytest -q
 

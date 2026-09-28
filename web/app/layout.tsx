@@ -31,6 +31,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               </div>
               <nav className="tb-nav">
                 <Link href="/campaigns">Campaigns</Link>
+                <Link href="/engineers">Engineers</Link>
                 <Link href="/filings">Filings</Link>
                 <span className="soon" title="Build step 5">
                   Replies

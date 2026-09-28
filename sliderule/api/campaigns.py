@@ -29,6 +29,9 @@ router = APIRouter()
 
 
 class RubricIn(BaseModel):
+    # Either a free-text description of who to hire, structured lists, or both
+    # — the evaluation reads the rubric verbatim as data.
+    description: str = ""
     hard_requirements: list[str] = Field(default_factory=list)
     green_flags: list[str] = Field(default_factory=list)
     red_flags: list[str] = Field(default_factory=list)
